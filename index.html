@@ -1,31 +1,251 @@
 <!DOCTYPE html>
-<!-- A placeholder from the Home Sales template. Replace this file with your site's first page. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Under construction</title>
-  <!-- An empty icon, so the browser doesn't log an error looking for favicon.ico -->
+  <title>Median home sale prices by city</title>
   <link rel="icon" href="data:,">
   <style>
-    :root { color-scheme: light dark; }
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #172033;
+      background: #f5f7fb;
+    }
     body {
-      max-width: 40rem;
-      margin: 0 auto;
-      padding: 3rem 1rem;
-      font-family: system-ui, sans-serif;
+      margin: 0;
       line-height: 1.5;
     }
-    footer { margin-top: 3rem; font-size: 0.875rem; opacity: 0.75; }
+    main {
+      max-width: 56rem;
+      margin: 0 auto;
+      padding: 3rem 1.25rem;
+    }
+    header {
+      margin-bottom: 2rem;
+    }
+    h1 {
+      max-width: 38rem;
+      margin: 0 0 0.75rem;
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+    .lede {
+      max-width: 42rem;
+      margin: 0;
+      color: #4a5872;
+      font-size: 1.1rem;
+    }
+    .note {
+      margin: 1.5rem 0 2rem;
+      padding: 1rem 1.1rem;
+      border-left: 4px solid #2d6cdf;
+      border-radius: 0.25rem;
+      background: #eaf1ff;
+    }
+    .note p {
+      margin: 0;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid #d9e0ec;
+      border-radius: 0.65rem;
+      background: #fff;
+      box-shadow: 0 0.5rem 1.5rem rgb(23 32 51 / 8%);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    caption {
+      padding: 1rem 1.1rem;
+      color: #4a5872;
+      font-size: 0.9rem;
+      text-align: left;
+    }
+    th,
+    td {
+      padding: 0.8rem 1.1rem;
+      border-top: 1px solid #e4e8f0;
+    }
+    th {
+      color: #4a5872;
+      background: #f8faff;
+      font-size: 0.8rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    td:last-child,
+    th:last-child {
+      text-align: right;
+    }
+    tbody tr:hover {
+      background: #f8faff;
+    }
+    .status {
+      color: #4a5872;
+    }
+    .error {
+      color: #a32121;
+    }
+    footer {
+      margin-top: 2rem;
+      color: #65728a;
+      font-size: 0.85rem;
+    }
+    footer a {
+      color: inherit;
+    }
   </style>
 </head>
 <body>
   <main>
-    <h1>This site is under construction</h1>
-    <p>It will show findings from the College-town home sales dataset.</p>
+    <header>
+      <h1>Median home sale prices by city</h1>
+      <p class="lede">A city-by-city view of completed home sales in the college-town dataset.</p>
+    </header>
+
+    <section class="note" aria-label="Price filtering rule">
+      <p><strong>Price rule:</strong> Sales under $10,000 are left out because the data description identifies them as implausible.</p>
+    </section>
+
+    <p id="status" class="status" role="status">Loading sale data...</p>
+    <div class="table-wrap">
+      <table hidden id="results">
+        <caption>Median sale price and number of included sales, calculated from the CSV.</caption>
+        <thead>
+          <tr>
+            <th scope="col">City</th>
+            <th scope="col">State</th>
+            <th scope="col">Included sales</th>
+            <th scope="col">Median sale price</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <footer>
+      <p>Source: <a href="docs/data_description_sheet.md">College-town home sales dataset, version 1.0 (2026)</a>. Values are calculated from <code>data/college_town_home_sales.csv</code>.</p>
+    </footer>
   </main>
-  <footer>
-    <p>Data: College-town home sales dataset, version 1.0 (2026). University of Illinois-Deloitte Foundation Center for Business Emerging Technologies. Data collected March 2026.</p>
-  </footer>
+
+  <script>
+    function parseCsv(text) {
+      const rows = [];
+      let row = [];
+      let field = "";
+      let quoted = false;
+
+      for (let index = 0; index < text.length; index += 1) {
+        const character = text[index];
+        const nextCharacter = text[index + 1];
+
+        if (character === '"' && quoted && nextCharacter === '"') {
+          field += '"';
+          index += 1;
+        } else if (character === '"') {
+          quoted = !quoted;
+        } else if (character === "," && !quoted) {
+          row.push(field);
+          field = "";
+        } else if ((character === "\n" || character === "\r") && !quoted) {
+          if (character === "\r" && nextCharacter === "\n") {
+            index += 1;
+          }
+          row.push(field);
+          if (row.some((value) => value !== "")) {
+            rows.push(row);
+          }
+          row = [];
+          field = "";
+        } else {
+          field += character;
+        }
+      }
+
+      row.push(field);
+      if (row.some((value) => value !== "")) {
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    function median(values) {
+      const middle = Math.floor(values.length / 2);
+      return values.length % 2 === 0
+        ? (values[middle - 1] + values[middle]) / 2
+        : values[middle];
+    }
+
+    function formatCurrency(value) {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0
+      }).format(value);
+    }
+
+    async function loadResults() {
+      const status = document.querySelector("#status");
+      const table = document.querySelector("#results");
+      const body = table.querySelector("tbody");
+
+      try {
+        const response = await fetch("data/college_town_home_sales.csv");
+        if (!response.ok) {
+          throw new Error(`Could not load the sale data (${response.status}).`);
+        }
+
+        const rows = parseCsv(await response.text());
+        const headers = rows.shift();
+        const cityIndex = headers.indexOf("city");
+        const stateIndex = headers.indexOf("state");
+        const priceIndex = headers.indexOf("sale_price");
+        const cities = new Map();
+
+        rows.forEach((row) => {
+          const price = Number(row[priceIndex]);
+          if (!Number.isFinite(price) || price < 10000) {
+            return;
+          }
+
+          const key = `${row[cityIndex]}|${row[stateIndex]}`;
+          if (!cities.has(key)) {
+            cities.set(key, {
+              city: row[cityIndex],
+              state: row[stateIndex],
+              prices: []
+            });
+          }
+          cities.get(key).prices.push(price);
+        });
+
+        [...cities.values()]
+          .sort((a, b) => a.city.localeCompare(b.city))
+          .forEach((group) => {
+            group.prices.sort((a, b) => a - b);
+            const row = document.createElement("tr");
+            row.innerHTML = `
+              <td>${group.city}</td>
+              <td>${group.state}</td>
+              <td>${group.prices.length.toLocaleString("en-US")}</td>
+              <td>${formatCurrency(median(group.prices))}</td>
+            `;
+            body.append(row);
+          });
+
+        status.hidden = true;
+        table.hidden = false;
+      } catch (error) {
+        status.textContent = error.message;
+        status.classList.add("error");
+      }
+    }
+
+    loadResults();
+  </script>
 </body>
 </html>
